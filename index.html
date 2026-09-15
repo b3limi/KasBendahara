@@ -1,0 +1,1283 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Arus Kas Nasabah (Mobile App - Supabase)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tambahkan library SheetJS untuk fitur Ekspor/Impor Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192x192.png">
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            -webkit-tap-highlight-color: transparent;
+            background-color: #f8fafc;
+        }
+        
+        /* Animasi */
+        .fade-in { animation: fadeIn 0.3s ease-out forwards; }
+        .fade-out { animation: fadeOut 0.3s ease-in forwards; }
+        .slide-up { animation: slideUp 0.3s ease-out forwards; }
+        
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .translate-x-full { transform: translateX(100%); }
+        .translate-x-0 { transform: translateX(0); }
+    </style>
+</head>
+<body class="text-slate-800 antialiased overflow-x-hidden">
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed top-4 left-4 right-4 z-[70] hidden bg-white shadow-xl rounded-2xl border-l-4 p-4 transition-all duration-300 transform -translate-y-full">
+        <div class="flex items-center">
+            <div id="toastIcon" class="flex-shrink-0 mr-3"></div>
+            <div class="flex-1">
+                <h3 id="toastTitle" class="text-sm font-bold"></h3>
+                <p id="toastMessage" class="text-xs text-slate-500 mt-0.5 leading-tight"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Konfirmasi Reset -->
+    <div id="resetModal" class="fixed inset-0 z-[70] hidden items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl scale-95 transition-transform duration-300" id="resetModalContent">
+            <div class="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4 mx-auto">
+                <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+            </div>
+            <h3 class="text-xl font-bold text-slate-800 text-center mb-2">Reset & Backup Data?</h3>
+            <p class="text-slate-500 text-sm text-center mb-6">Sistem akan mengunduh file Excel (.xlsx) sebagai backup, lalu seluruh data nasabah dan riwayat akan dihapus permanen.</p>
+            <div class="flex gap-3">
+                <button onclick="hideModal()" class="flex-1 py-3 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors">Batal</button>
+                <button onclick="executeReset()" class="flex-1 py-3 rounded-xl text-sm font-semibold text-white bg-red-600 hover:bg-red-700 transition-colors">Ya, Backup & Hapus</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Pilih Nasabah (Bottom Sheet) -->
+    <div id="customerSelectModal" class="fixed inset-0 z-[80] hidden flex-col justify-end bg-slate-900/40 backdrop-blur-sm transition-opacity duration-300 opacity-0">
+        <div id="customerSelectContent" class="bg-white w-full h-[80vh] max-h-[600px] rounded-t-3xl shadow-2xl transform translate-y-full transition-transform duration-300 flex flex-col">
+            <div class="p-5 border-b border-slate-100 flex items-center justify-between shrink-0">
+                <h3 class="text-lg font-bold text-slate-800">Pilih Nasabah</h3>
+                <button onclick="closeCustomerSelectModal()" class="p-2 -mr-2 rounded-full hover:bg-slate-100 text-slate-500 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="p-4 shrink-0 bg-white">
+                <div class="relative">
+                    <svg class="w-5 h-5 absolute left-3.5 top-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    <input type="text" id="customerSearchInput" placeholder="Cari nama atau ketik untuk tambah baru..." onkeyup="filterCustomerSelect()" class="w-full bg-slate-50 border border-slate-200 rounded-xl py-3.5 pl-11 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium text-slate-800">
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 pt-0 no-scrollbar pb-safe">
+                <div id="customerSelectList" class="space-y-2"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Header -->
+    <header class="bg-white px-5 py-4 flex justify-between items-center shadow-sm sticky top-0 z-40">
+        <div>
+            <h1 class="text-xl font-bold text-slate-800 tracking-tight">Kas Nasabah</h1>
+            <p class="text-xs text-slate-500 font-medium" id="headerDate">Loading date...</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <!-- Tombol Restore Data -->
+            <label for="restoreFileInput" class="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:text-green-500 hover:bg-green-50 transition-colors cursor-pointer" title="Pulihkan dari Excel">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+            </label>
+            <input type="file" id="restoreFileInput" accept=".xlsx, .xls" class="hidden" onchange="restoreData(event)">
+            
+            <!-- Tombol Reset & Backup -->
+            <button onclick="showModal()" class="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="Backup & Reset Data">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="pb-24 pt-4 px-4 max-w-lg mx-auto w-full">
+
+        <!-- TAB 1: DASHBOARD -->
+        <div id="tab-dashboard" class="tab-content space-y-6 block fade-in">
+            <div class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-5 text-white shadow-lg relative overflow-hidden">
+                <div class="absolute -right-4 -top-4 w-24 h-24 bg-white opacity-5 rounded-full blur-xl"></div>
+                <p class="text-xs text-slate-400 font-medium mb-1 uppercase tracking-wider">Total Dana Keseluruhan</p>
+                <h2 class="text-3xl font-bold tracking-tight mb-4" id="totalAll">Rp 0</h2>
+                
+                <div class="grid grid-cols-2 gap-4 pt-4 border-t border-slate-700/50">
+                    <div>
+                        <p class="text-[10px] text-slate-400 font-medium mb-1 flex items-center gap-1">
+                            <svg class="w-3 h-3 text-green-400" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+                            UANG TUNAI (CASH)
+                        </p>
+                        <p class="text-sm font-semibold text-slate-200" id="totalCash">Rp 0</p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] text-slate-400 font-medium mb-1 flex items-center gap-1">
+                            <svg class="w-3 h-3 text-blue-400" fill="currentColor" viewBox="0 0 24 24"><path d="M4 10h3v7H4zM10.5 10h3v7h-3zM2 19h20v3H2zM17 10h3v7h-3zM12 1L2 6v2h20V6z"/></svg>
+                            REKENING BANK
+                        </p>
+                        <p class="text-sm font-semibold text-slate-200" id="totalBank">Rp 0</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                <h3 class="text-base font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <div class="w-6 h-6 rounded-md bg-blue-100 text-blue-600 flex items-center justify-center">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    </div>
+                    Catat Arus Kas
+                </h3>
+                
+                <form id="transactionForm" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Nama Nasabah</label>
+                        <div class="relative" onclick="openCustomerSelectModal()">
+                            <input type="text" id="customerName" required readonly placeholder="Ketuk untuk memilih nasabah..." 
+                                class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium text-slate-800 cursor-pointer pointer-events-none">
+                            <svg class="w-5 h-5 absolute right-3.5 top-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-4">
+    <!-- Pilihan Alur -->
+    <div>
+        <label class="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Alur Transaksi</label>
+        <div class="grid grid-cols-2 gap-3">
+            <label class="cursor-pointer">
+                <input type="radio" name="txType" value="masuk" class="peer sr-only" required onchange="updateKeteranganLabel()">
+                <div class="py-3.5 rounded-xl border border-slate-200 bg-slate-50 text-center text-sm font-bold text-slate-500 transition-all peer-checked:bg-green-50 peer-checked:border-green-400 peer-checked:text-green-600 shadow-sm hover:bg-slate-100">
+                    Masuk (+)
+                </div>
+            </label>
+            <label class="cursor-pointer">
+                <input type="radio" name="txType" value="keluar" class="peer sr-only" onchange="updateKeteranganLabel()">
+                <div class="py-3.5 rounded-xl border border-slate-200 bg-slate-50 text-center text-sm font-bold text-slate-500 transition-all peer-checked:bg-red-50 peer-checked:border-red-400 peer-checked:text-red-600 shadow-sm hover:bg-slate-100">
+                    Keluar (-)
+                </div>
+            </label>
+        </div>
+    </div>
+
+    <!-- Pilihan Simpan Di -->
+    <div>
+        <label class="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Simpan Di</label>
+        <div class="grid grid-cols-2 gap-3">
+            <label class="cursor-pointer">
+                <input type="radio" name="txMethod" value="rekening" class="peer sr-only" required>
+                <div class="py-3.5 rounded-xl border border-slate-200 bg-slate-50 text-center text-sm font-bold text-slate-500 transition-all peer-checked:bg-blue-50 peer-checked:border-blue-400 peer-checked:text-blue-600 shadow-sm hover:bg-slate-100">
+                    Rekening
+                </div>
+            </label>
+            <label class="cursor-pointer">
+                <input type="radio" name="txMethod" value="cash" class="peer sr-only">
+                <div class="py-3.5 rounded-xl border border-slate-200 bg-slate-50 text-center text-sm font-bold text-slate-500 transition-all peer-checked:bg-blue-50 peer-checked:border-blue-400 peer-checked:text-blue-600 shadow-sm hover:bg-slate-100">
+                    Tunai (Cash)
+                </div>
+            </label>
+        </div>
+    </div>
+</div>
+
+                    <div>
+                        <label id="keteranganLabel" class="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Sumber Dana</label>
+                        <input type="text" id="txKeterangan" required placeholder="Mis: Pembayaran Proyek A" 
+                            class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all text-slate-800">
+                    </div>
+
+                    <div>
+    <label class="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Nominal (Rp)</label>
+    <div class="relative">
+        <span class="absolute left-4 top-3.5 text-slate-400 font-bold text-sm">Rp</span>
+        <input type="tel" id="txAmount" required placeholder="0" inputmode="numeric" oninput="formatInputRupiah(this)"
+            class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3.5 pl-11 text-lg font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all text-slate-800">
+    </div>
+</div>
+
+                    <button type="submit" class="w-full bg-blue-600 active:bg-blue-700 text-white font-bold py-4 rounded-xl transition-colors mt-2 shadow-sm shadow-blue-200">
+                        Simpan Catatan
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- TAB 2: DAFTAR NASABAH -->
+        <div id="tab-nasabah" class="tab-content hidden space-y-4 fade-in">
+            <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 mb-2 sticky top-16 z-30">
+                <div class="relative">
+                    <svg class="w-5 h-5 absolute left-3 top-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    <input type="text" id="searchNasabah" placeholder="Cari nama nasabah..." onkeyup="filterNasabah()" class="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                </div>
+            </div>
+            
+            <div id="nasabahList" class="space-y-3 pb-4"></div>
+        </div>
+
+        <!-- TAB 3: RIWAYAT KESELURUHAN -->
+        <div id="tab-riwayat" class="tab-content hidden space-y-4 fade-in">
+            <!-- Form Pencarian & Filter Bulan Riwayat -->
+            <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 mb-2 sticky top-16 z-30 space-y-3">
+                <div class="relative">
+                    <svg class="w-5 h-5 absolute left-3 top-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    <input type="text" id="searchRiwayat" placeholder="Cari nama atau keterangan..." onkeyup="filterRiwayat()" class="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                </div>
+                <div class="relative flex items-center">
+                    <svg class="w-5 h-5 absolute left-3 text-slate-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    <input type="month" id="monthRiwayat" onchange="filterRiwayat()" class="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all text-slate-600 font-medium">
+                </div>
+            </div>
+
+            <h2 class="font-bold text-slate-800 px-1">Semua Riwayat Transaksi</h2>
+            <div id="globalHistoryList" class="space-y-3 pb-4"></div>
+        </div>
+
+    </main>
+
+    <!-- HALAMAN DETAIL NASABAH (OVERLAY) -->
+    <div id="customerDetailView" class="fixed inset-0 bg-slate-50 z-[60] transform translate-x-full transition-transform duration-300 ease-in-out flex flex-col h-full w-full">
+        <div class="bg-white px-4 py-4 flex items-center shadow-sm sticky top-0 z-10 shrink-0">
+            <button onclick="closeCustomerDetail()" class="p-2 -ml-2 mr-2 rounded-full hover:bg-slate-100 text-slate-600 transition-colors">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+            </button>
+            <div class="flex-1">
+                <h2 class="text-lg font-bold text-slate-800 leading-tight" id="detailCustomerName">Nama Nasabah</h2>
+                <p class="text-xs text-slate-500 font-medium">Profil & Riwayat</p>
+            </div>
+            <!-- Tombol Nonaktifkan Nasabah -->
+            <button id="btnDeactivateCustomer" class="p-2 rounded-full hover:bg-red-50 text-red-500 transition-colors" title="Sembunyikan / Nonaktifkan Nasabah">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+            </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-4 space-y-5 no-scrollbar pb-10">
+            <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center">
+                <div class="w-14 h-14 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 text-xl font-bold mb-3" id="detailCustomerInitial">
+                    A
+                </div>
+                <p class="text-xs text-slate-500 font-medium uppercase tracking-wider mb-1">Total Saldo Tersimpan</p>
+                <h3 class="text-3xl font-bold text-slate-800" id="detailCustomerBalance">Rp 0</h3>
+            </div>
+
+            <div>
+                <div class="flex items-center justify-between mb-3 px-1">
+                    <h3 class="font-bold text-slate-800">Riwayat Transaksi</h3>
+                </div>
+                
+                <!-- Form Pencarian & Filter Bulan Riwayat Personal -->
+                <div class="space-y-3 mb-4">
+                    <div class="relative">
+                        <svg class="w-5 h-5 absolute left-3 top-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        <input type="text" id="searchPersonalHistory" placeholder="Cari keterangan atau nominal..." onkeyup="filterPersonalHistory()" class="w-full bg-white border border-slate-200 rounded-xl py-3 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm">
+                    </div>
+                    <div class="relative flex items-center">
+                        <svg class="w-5 h-5 absolute left-3 text-slate-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        <input type="month" id="monthPersonalHistory" onchange="filterPersonalHistory()" class="w-full bg-white border border-slate-200 rounded-xl py-3 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm text-slate-600 font-medium">
+                    </div>
+                </div>
+
+                <div id="personalHistoryList" class="space-y-3"></div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- BOTTOM NAVIGATION -->
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 pb-safe pt-2 z-50 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
+        <div class="max-w-lg mx-auto w-full flex justify-around px-2 pb-2">
+            <button onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-btn flex flex-col items-center w-20 py-1 text-blue-600 transition-colors">
+                <div class="p-1.5 rounded-xl bg-blue-50 mb-1 transition-all" id="icon-dashboard-bg">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                </div>
+                <span class="text-[10px] font-semibold">Beranda</span>
+            </button>
+            <button onclick="switchTab('nasabah')" id="nav-nasabah" class="nav-btn flex flex-col items-center w-20 py-1 text-slate-400 hover:text-slate-600 transition-colors">
+                <div class="p-1.5 rounded-xl bg-transparent mb-1 transition-all" id="icon-nasabah-bg">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                </div>
+                <span class="text-[10px] font-semibold">Nasabah</span>
+            </button>
+            <button onclick="switchTab('riwayat')" id="nav-riwayat" class="nav-btn flex flex-col items-center w-20 py-1 text-slate-400 hover:text-slate-600 transition-colors">
+                <div class="p-1.5 rounded-xl bg-transparent mb-1 transition-all" id="icon-riwayat-bg">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+                </div>
+                <span class="text-[10px] font-semibold">Riwayat</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- SUPABASE SCRIPT -->
+    <script type="module">
+        import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
+        // GANTI DENGAN KREDENSIAL SUPABASE ANDA
+        const SUPABASE_URL = 'https://bumvsfosghniagskbbwe.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ1bXZzZm9zZ2huaWFnc2tiYndlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkzODk0NjUsImV4cCI6MjEwNDk2NTQ2NX0.1v_uH1INYJCxtoVadJwKRxDwmwb41tEt5GqXNA3f9yY';
+        
+        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let userId = null;
+let transactions = [];
+let customersData = []; // <-- Variabel baru untuk tabel nasabah
+let currentActiveCustomer = null;       
+
+        const formatRp = (angka) => {
+            return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(angka);
+        };
+
+        const formatDateShort = (isoString) => {
+            const date = new Date(isoString);
+            return date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+        };
+
+        const formatTime = (isoString) => {
+            const date = new Date(isoString);
+            return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        };
+
+        const updateDateHeader = () => {
+            const date = new Date();
+            const options = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' };
+            document.getElementById('headerDate').innerText = date.toLocaleDateString('id-ID', options);
+        };
+
+        window.switchTab = function(tabId) {
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.add('hidden');
+                tab.classList.remove('block');
+            });
+            const target = document.getElementById(`tab-${tabId}`);
+            target.classList.remove('hidden');
+            target.classList.add('block');
+
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('text-blue-600');
+                btn.classList.add('text-slate-400');
+            });
+            document.querySelectorAll('[id^="icon-"][id$="-bg"]').forEach(bg => {
+                bg.classList.remove('bg-blue-50');
+                bg.classList.add('bg-transparent');
+            });
+
+            document.getElementById(`nav-${tabId}`).classList.remove('text-slate-400', 'hover:text-slate-600');
+            document.getElementById(`nav-${tabId}`).classList.add('text-blue-600');
+            document.getElementById(`icon-${tabId}-bg`).classList.remove('bg-transparent');
+            document.getElementById(`icon-${tabId}-bg`).classList.add('bg-blue-50');
+
+            if(tabId === 'nasabah') filterNasabah();
+        };
+
+        window.showToast = function(title, message, type = 'success') {
+            const toast = document.getElementById('toast');
+            const icon = document.getElementById('toastIcon');
+            const titleEl = document.getElementById('toastTitle');
+            const messageEl = document.getElementById('toastMessage');
+
+            toast.className = 'fixed top-4 left-4 right-4 z-[70] bg-white shadow-xl rounded-2xl border-l-4 p-4 transition-all duration-300 transform';
+            
+            if (type === 'success') {
+                toast.classList.add('border-l-green-500');
+                icon.innerHTML = `<div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center"><svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></div>`;
+                titleEl.className = 'text-sm font-bold text-slate-800';
+            } else if (type === 'error') {
+                toast.classList.add('border-l-red-500');
+                icon.innerHTML = `<div class="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center"><svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></div>`;
+                titleEl.className = 'text-sm font-bold text-slate-800';
+            }
+
+            titleEl.innerText = title;
+            messageEl.innerText = message;
+            
+            toast.classList.remove('-translate-y-full', 'hidden');
+            toast.classList.add('translate-y-0');
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-0');
+                toast.classList.add('-translate-y-full');
+            }, 3000);
+        };
+
+        window.showModal = function() {
+            const modal = document.getElementById('resetModal');
+            const content = document.getElementById('resetModalContent');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            setTimeout(() => {
+                content.classList.remove('scale-95');
+                content.classList.add('scale-100');
+            }, 10);
+        };
+
+        window.hideModal = function() {
+            const modal = document.getElementById('resetModal');
+            const content = document.getElementById('resetModalContent');
+            content.classList.remove('scale-100');
+            content.classList.add('scale-95');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }, 300);
+        };
+
+        window.openCustomerSelectModal = function() {
+            const modal = document.getElementById('customerSelectModal');
+            const content = document.getElementById('customerSelectContent');
+            const searchInput = document.getElementById('customerSearchInput');
+            
+            searchInput.value = '';
+            renderCustomerSelectList('');
+            
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            
+            void modal.offsetWidth; 
+            modal.classList.remove('opacity-0');
+            content.classList.remove('translate-y-full');
+            content.classList.add('translate-y-0');
+            
+            setTimeout(() => { searchInput.focus(); }, 350);
+        };
+
+        window.closeCustomerSelectModal = function() {
+            const modal = document.getElementById('customerSelectModal');
+            const content = document.getElementById('customerSelectContent');
+            
+            content.classList.remove('translate-y-0');
+            content.classList.add('translate-y-full');
+            modal.classList.add('opacity-0');
+            
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }, 300);
+        };
+
+        window.renderCustomerSelectList = function(filterQuery) {
+            const listEl = document.getElementById('customerSelectList');
+            const stats = calculateStats();
+            
+            const customers = Object.keys(stats.customers); 
+            const q = filterQuery.toUpperCase().trim();
+            const filtered = customers.filter(name => name.includes(q));
+            
+            listEl.innerHTML = '';
+            
+            const exactMatch = customers.find(name => name === q);
+            if (filterQuery.trim() !== '' && !exactMatch) {
+                listEl.innerHTML += `
+                    <div onclick="selectCustomer('${filterQuery.trim().toUpperCase()}')" class="p-3.5 bg-blue-50 border-2 border-blue-200 border-dashed rounded-xl flex items-center gap-3 cursor-pointer active:scale-[0.98] transition-transform">
+                        <div class="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm shrink-0">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        </div>
+                        <div>
+                            <span class="block text-xs text-blue-600 font-bold uppercase tracking-wider mb-0.5">Tambah Nasabah Baru</span>
+                            <span class="font-bold text-slate-800 text-sm">"${filterQuery.trim().toUpperCase()}"</span>
+                        </div>
+                    </div>
+                `;
+            }
+
+            if (filtered.length > 0) {
+                filtered.forEach(name => {
+                    listEl.innerHTML += `
+                        <div onclick="selectCustomer('${name}')" class="p-3.5 bg-white border border-slate-100 rounded-xl flex items-center gap-3 cursor-pointer active:scale-[0.98] transition-transform hover:bg-slate-50">
+                            <div class="w-10 h-10 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-lg shrink-0">${name.charAt(0)}</div>
+                            <span class="font-bold text-slate-800 text-sm flex-1">${name}</span>
+                            <svg class="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        </div>
+                    `;
+                });
+            } else if (filterQuery.trim() === '') {
+                if (customers.length === 0) {
+                     listEl.innerHTML = `
+                        <div class="text-center py-10">
+                            <div class="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                                <svg class="w-6 h-6 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                            </div>
+                            <p class="text-slate-400 text-sm font-medium">Belum ada data nasabah tersimpan.<br>Ketik nama di atas untuk menambah baru.</p>
+                        </div>`;
+                }
+            }
+        };
+
+        window.filterCustomerSelect = function() {
+            const q = document.getElementById('customerSearchInput').value;
+            renderCustomerSelectList(q);
+        };
+
+        window.selectCustomer = function(name) {
+            const input = document.getElementById('customerName');
+            input.value = name;
+            window.closeCustomerSelectModal();
+        };
+
+
+        window.executeReset = async function() {
+            if (!userId) return window.showToast('Error', 'Belum terhubung ke server', 'error');
+            
+            if (transactions.length === 0 && customersData.length === 0) {
+                window.hideModal();
+                return window.showToast('Info', 'Tidak ada data untuk dibackup atau dihapus', 'error');
+            }
+
+            window.hideModal();
+            window.showToast('Memproses', 'Membuat file Excel Backup...', 'success');
+            
+            try {
+                const wb = XLSX.utils.book_new();
+                
+                // Format Data Nasabah & Berikan Password Proteksi
+                const wsCustomers = XLSX.utils.json_to_sheet(customersData.map(c => ({
+                    id: c.id, name: c.name, is_active: c.is_active, created_at: c.created_at
+                })));
+                wsCustomers['!protect'] = { password: "muflih123456" }; // Mengunci Sheet Nasabah
+                XLSX.utils.book_append_sheet(wb, wsCustomers, "Nasabah");
+                
+                // Format Data Riwayat & Berikan Password Proteksi
+                const wsTransactions = XLSX.utils.json_to_sheet(transactions.map(t => ({
+                    id: t.id, timestamp: t.timestamp, customer: t.customer, type: t.type, 
+                    method: t.method, keterangan: t.keterangan, amount: t.amount
+                })));
+                wsTransactions['!protect'] = { password: "muflih123456" }; // Mengunci Sheet Transaksi
+                XLSX.utils.book_append_sheet(wb, wsTransactions, "Transaksi");
+
+                // Unduh File Excel
+                const dateStr = new Date().toISOString().split('T')[0];
+                XLSX.writeFile(wb, `Backup_Kas_${dateStr}.xlsx`);
+
+                setTimeout(async () => {
+                    window.showToast('Memproses', 'Menghapus seluruh data di Server...', 'success');
+                    
+                    const { error: errTx } = await supabase.from('transactions').delete().eq('user_id', userId);
+                    if (errTx) throw errTx;
+                    
+                    const { error: errCust } = await supabase.from('customers').delete().eq('user_id', userId);
+                    if (errCust) throw errCust;
+                    
+                    transactions = [];
+                    customersData = [];
+                    renderUI();
+                    
+                    window.showToast('Selesai', 'Backup tersimpan & Data berhasil dikosongkan.', 'success');
+                }, 1500);
+                
+            } catch (error) {
+                console.error("Reset Error:", error);
+                window.showToast('Error', 'Gagal memproses data', 'error');
+            }
+        };
+  
+        window.restoreData = async function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // Peringatan alur baru
+            const yakin = confirm("Proses Restore akan dijalankan.\n\nJika ada data di aplikasi saat ini, sistem akan otomatis mengunduh file Auto-Backup terlebih dahulu, mengosongkan aplikasi, barulah memasukkan data dari file Excel yang Anda pilih.\n\nLanjutkan?");
+            
+            if (!yakin) {
+                event.target.value = '';
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {type: 'array'});
+                
+                try {
+                    // ==========================================
+                    // TAHAP 1: VALIDASI FILE EXCEL
+                    // ==========================================
+                    window.showToast('Memproses', 'Memvalidasi file Excel...', 'success');
+                    const customersSheet = workbook.Sheets["Nasabah"];
+                    const transactionsSheet = workbook.Sheets["Transaksi"];
+                    
+                    // Cek apakah nama sheet sesuai
+                    if (!customersSheet || !transactionsSheet) {
+                        throw new Error("File tidak valid! Harus menggunakan file Backup dari aplikasi ini (Memiliki Sheet Nasabah & Transaksi).");
+                    }
+
+                    const importedCustomers = XLSX.utils.sheet_to_json(customersSheet);
+                    const importedTransactions = XLSX.utils.sheet_to_json(transactionsSheet);
+
+                    // Cek apakah kolom di dalam sheet transaksi sesuai dengan struktur database kita
+                    if (importedTransactions.length > 0 && !('amount' in importedTransactions[0] && 'customer' in importedTransactions[0])) {
+                        throw new Error("Struktur file salah! Kolom data tidak sesuai format.");
+                    }
+
+                    // ==========================================
+                    // TAHAP 2: AUTO-BACKUP JIKA ADA DATA AKTIF
+                    // ==========================================
+                    if (transactions.length > 0 || customersData.length > 0) {
+                        window.showToast('Memproses', 'Membuat Auto-Backup data saat ini...', 'success');
+                        const wbBackup = XLSX.utils.book_new();
+
+                        // Sheet Nasabah (Auto Backup) + Password
+                        const wsCustBackup = XLSX.utils.json_to_sheet(customersData.map(c => ({
+                            id: c.id, name: c.name, is_active: c.is_active, created_at: c.created_at
+                        })));
+                        wsCustBackup['!protect'] = { password: "muflih123456" };
+                        XLSX.utils.book_append_sheet(wbBackup, wsCustBackup, "Nasabah");
+
+                        // Sheet Transaksi (Auto Backup) + Password
+                        const wsTxBackup = XLSX.utils.json_to_sheet(transactions.map(t => ({
+                            id: t.id, timestamp: t.timestamp, customer: t.customer, type: t.type, 
+                            method: t.method, keterangan: t.keterangan, amount: t.amount
+                        })));
+                        wsTxBackup['!protect'] = { password: "muflih123456" };
+                        XLSX.utils.book_append_sheet(wbBackup, wsTxBackup, "Transaksi");
+
+                        // Unduh Auto-Backup
+                        const timeStr = new Date().toISOString().replace(/[:.]/g, '-');
+                        XLSX.writeFile(wbBackup, `AutoBackup_Sblm_Restore_${timeStr}.xlsx`);
+
+                        // Jeda 2 detik agar unduhan Excel selesai sebelum penghapusan data
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    }
+
+                    // ==========================================
+                    // TAHAP 3: KOSONGKAN DATABASE LAMA
+                    // ==========================================
+                    window.showToast('Memproses', 'Membersihkan data lama...', 'success');
+                    await supabase.from('transactions').delete().eq('user_id', userId);
+                    await supabase.from('customers').delete().eq('user_id', userId);
+
+                    // ==========================================
+                    // TAHAP 4: MASUKKAN DATA DARI EXCEL
+                    // ==========================================
+                    window.showToast('Memproses', 'Menyalin data dari Excel...', 'success');
+                    
+                    const newCustomers = importedCustomers.map(c => ({...c, user_id: userId}));
+                    const newTransactions = importedTransactions.map(t => ({...t, user_id: userId}));
+
+                    if (newCustomers.length > 0) {
+                        const { error: errC } = await supabase.from('customers').insert(newCustomers);
+                        if (errC) throw errC;
+                    }
+                    if (newTransactions.length > 0) {
+                        const { error: errT } = await supabase.from('transactions').insert(newTransactions);
+                        if (errT) throw errT;
+                    }
+
+                    window.showToast('Berhasil', 'Seluruh data berhasil dipulihkan', 'success');
+                    event.target.value = '';
+                    
+                    // Tarik ulang antarmuka
+                    await fetchInitialData();
+                    
+                } catch (error) {
+                    console.error("Restore Error:", error);
+                    window.showToast('Dibatalkan', error.message || 'Gagal memulihkan data', 'error');
+                    event.target.value = '';
+                }
+            };
+            
+            // Eksekusi baca file
+            reader.readAsArrayBuffer(file);
+        };
+
+        window.updateKeteranganLabel = function() {
+    const selectedType = document.querySelector('input[name="txType"]:checked');
+    const type = selectedType ? selectedType.value : '';
+    const label = document.getElementById('keteranganLabel');
+    const input = document.getElementById('txKeterangan');
+    
+    if (type === 'masuk') {
+        label.innerText = 'Sumber Dana Masuk';
+        input.placeholder = 'Mis: Proyek A, Tagihan 01...';
+    } else if (type === 'keluar') {
+        label.innerText = 'Tujuan Dana Keluar';
+        input.placeholder = 'Mis: Gaji Karyawan, Beli Bahan...';
+    } else {
+        label.innerText = 'Sumber / Tujuan Dana';
+        input.placeholder = 'Pilih alur terlebih dahulu...';
+    }
+};
+
+// Fungsi untuk membuat format titik pemisah ribuan saat mengetik
+window.formatInputRupiah = function(input) {
+    let value = input.value.replace(/[^,\d]/g, '').toString();
+    let split = value.split(',');
+    let sisa = split[0].length % 3;
+    let rupiah = split[0].substr(0, sisa);
+    let ribuan = split[0].substr(sisa).match(/\d{3}/gi);
+
+    if (ribuan) {
+        let separator = sisa ? '.' : '';
+        rupiah += separator + ribuan.join('.');
+    }
+
+    rupiah = split[1] != undefined ? rupiah + ',' + split[1] : rupiah;
+    input.value = rupiah;
+};
+
+    function calculateStats() {
+            let cash = 0, bank = 0;
+            let activeCustomers = {};
+
+            // 1. Ambil daftar nasabah dari tabel (Hanya yang statusnya aktif)
+            customersData.forEach(c => {
+                if (c.is_active) {
+                    activeCustomers[c.name.toUpperCase()] = 0; // Set saldo awal 0
+                }
+            });
+
+            // 2. Hitung jumlah saldo berdasarkan riwayat transaksi
+            transactions.forEach(tx => {
+                const amount = parseInt(tx.amount);
+                
+                // Hitung Kas & Bank (abaikan jika status transaksi dihapus)
+                if (tx.method !== 'dihapus') {
+                    if (tx.type === 'masuk') {
+                        if (tx.method === 'cash') cash += amount;
+                        if (tx.method === 'rekening') bank += amount;
+                    } else if (tx.type === 'keluar') {
+                        if (tx.method === 'cash') cash -= amount;
+                        if (tx.method === 'rekening') bank -= amount;
+                    }
+                }
+
+                // Tambahkan/Kurangkan ke saldo nasabah
+                const name = tx.customer.toUpperCase();
+                // Hanya hitung jika nasabah ada di daftar aktif dan transaksi tidak dihapus
+                if (activeCustomers[name] !== undefined && tx.method !== 'dihapus') {
+                    if (tx.type === 'masuk') activeCustomers[name] += amount;
+                    if (tx.type === 'keluar') activeCustomers[name] -= amount;
+                }
+            });
+
+            return { cash, bank, customers: activeCustomers };
+        }
+
+        function getTransactionCardHTML(tx, showCustomerName = true) {
+            const isDeleted = tx.method === 'dihapus';
+            const isMasuk = tx.type === 'masuk';
+            
+            // Pengaturan warna & icon (berubah jadi abu-abu jika dihapus)
+            const iconBg = isDeleted ? 'bg-slate-100' : (isMasuk ? 'bg-green-100' : 'bg-red-100');
+            const iconCol = isDeleted ? 'text-slate-400' : (isMasuk ? 'text-green-600' : 'text-red-600');
+            const sign = isDeleted ? '' : (isMasuk ? '+' : '-');
+            const ketPrefix = isMasuk ? 'Dari: ' : 'Ke: ';
+            
+            const iconSvg = isDeleted 
+                ? `<svg class="w-5 h-5 ${iconCol}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>`
+                : (isMasuk 
+                    ? `<svg class="w-5 h-5 ${iconCol}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>`
+                    : `<svg class="w-5 h-5 ${iconCol}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"></path></svg>`);
+
+            // Menentukan label metode pembayaran
+            let methodIcon = '';
+            if (tx.method === 'cash') {
+                methodIcon = `<svg class="w-3 h-3 text-slate-400 mr-1" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg> Tunai`;
+            } else if (tx.method === 'rekening') {
+                methodIcon = `<svg class="w-3 h-3 text-blue-400 mr-1" fill="currentColor" viewBox="0 0 24 24"><path d="M4 10h3v7H4zM10.5 10h3v7h-3zM2 19h20v3H2zM17 10h3v7h-3zM12 1L2 6v2h20V6z"/></svg> Rek`;
+            } else if (isDeleted) {
+                methodIcon = `<svg class="w-3 h-3 text-slate-400 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Dihapus`;
+            }
+
+            const customerHeader = showCustomerName 
+                ? `<div class="font-bold ${isDeleted ? 'text-slate-400 line-through' : 'text-slate-800'} text-sm mb-0.5 truncate">${tx.customer.toUpperCase()}</div>` 
+                : '';
+
+            // Tombol hapus (hanya muncul jika belum dihapus)
+            const deleteButton = !isDeleted 
+                ? `<button onclick="hapusRiwayat('${tx.id}')" class="absolute top-2 right-2 p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Hapus Riwayat">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                   </button>` 
+                : '';
+
+            return `
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-3 relative ${isDeleted ? 'opacity-70 bg-slate-50' : ''}">
+                    ${deleteButton}
+                    <div class="w-10 h-10 rounded-full ${iconBg} flex items-center justify-center shrink-0 mt-1">
+                        ${iconSvg}
+                    </div>
+                    <div class="flex-1 min-w-0 pr-6">
+                        ${customerHeader}
+                        <div class="text-xs ${isDeleted ? 'text-slate-400 italic' : 'text-slate-500'} truncate whitespace-normal leading-relaxed">
+                            <span class="font-semibold ${isDeleted ? 'text-slate-400' : 'text-slate-600'}">${isDeleted ? '' : ketPrefix}</span>${tx.keterangan}
+                        </div>
+                        <div class="flex items-center text-[10px] text-slate-400 mt-1.5 font-medium">
+                            ${formatDateShort(tx.timestamp)} • ${formatTime(tx.timestamp)} • <span class="flex items-center ml-1">${methodIcon}</span>
+                        </div>
+                    </div>
+                    <div class="text-right shrink-0">
+                        <div class="font-bold text-sm ${iconCol}">${sign} ${formatRp(tx.amount)}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+window.hapusRiwayat = async function(id) {
+            // Gunakan findIndex agar kita bisa menemukan dan memodifikasi datanya langsung di memori
+            const txIndex = transactions.findIndex(t => String(t.id) === String(id));
+            
+            if (txIndex === -1) {
+                console.error("Data tidak ditemukan");
+                return;
+            }
+
+            const tx = transactions[txIndex];
+
+            // Konfirmasi kepada pengguna
+            const yakin = confirm(`Hapus riwayat untuk ${tx.customer}?\nNominal: ${formatRp(tx.amount)}\n\nSaldo nasabah dan total kas akan disesuaikan secara otomatis.`);
+            if (!yakin) return;
+
+            // Menyiapkan keterangan baru (menambahkan teks dihapus, nominal asli, dan metode asli)
+            const methodLabel = tx.method === 'cash' ? 'Tunai' : 'Rekening';
+            const newKeterangan = `${tx.keterangan} (Dihapus: ${formatRp(tx.amount)} - ${methodLabel})`;
+
+            try {
+                window.showToast('Memproses', 'Menghapus riwayat...', 'success');
+                
+                // 1. Lakukan UPDATE ke server Supabase
+                const { error } = await supabase
+                    .from('transactions')
+                    .update({ 
+                        amount: 0, 
+                        method: 'dihapus', 
+                        keterangan: newKeterangan 
+                    })
+                    .eq('id', id);
+
+                if (error) throw error;
+                
+                // 2. OPTIMISTIC UPDATE: Langsung ubah data di aplikasi agar tampilan instan berubah
+                transactions[txIndex].amount = 0;
+                transactions[txIndex].method = 'dihapus';
+                transactions[txIndex].keterangan = newKeterangan;
+                
+                // 3. Muat ulang perhitungan kas dan daftar layar
+                renderUI();
+                
+                window.showToast('Berhasil', 'Riwayat berhasil dihapus', 'success');
+                
+            } catch (error) {
+                console.error("Delete Error:", error);
+                window.showToast('Error', 'Gagal menghapus riwayat, periksa koneksi atau izin database.', 'error');
+            }
+        };
+        
+        function renderNasabahList(customersObj, filter = "") {
+            const listEl = document.getElementById('nasabahList');
+            listEl.innerHTML = '';
+            
+            let sorted = Object.entries(customersObj).sort((a, b) => b[1] - a[1]);
+            
+            if (filter) {
+                const q = filter.toUpperCase();
+                sorted = sorted.filter(([name, _]) => name.includes(q));
+            }
+
+            if (sorted.length === 0) {
+                listEl.innerHTML = `
+                    <div class="text-center py-10 bg-white rounded-2xl border border-slate-100 border-dashed">
+                        <div class="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <svg class="w-6 h-6 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                        </div>
+                        <p class="text-slate-400 text-sm font-medium">Belum ada data nasabah</p>
+                    </div>`;
+                return;
+            }
+
+            sorted.forEach(([name, balance]) => {
+                const initial = name.charAt(0).toUpperCase();
+                const isNeg = balance < 0;
+                listEl.innerHTML += `
+                    <div onclick="openCustomerDetail('${name}')" class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-3 active:scale-[0.98] transition-transform cursor-pointer">
+                        <div class="w-11 h-11 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-lg shrink-0">
+                            ${initial}
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h4 class="font-bold text-slate-800 text-sm truncate">${name}</h4>
+                            <p class="text-xs text-slate-500 mt-0.5">Ketuk untuk lihat detail</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-[10px] text-slate-400 uppercase font-semibold mb-0.5">Saldo</p>
+                            <p class="font-bold text-sm ${isNeg ? 'text-red-500' : 'text-slate-800'}">${formatRp(balance)}</p>
+                        </div>
+                        <svg class="w-5 h-5 text-slate-300 ml-1 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                    </div>
+                `;
+            });
+        }
+
+        window.filterNasabah = function() {
+            const q = document.getElementById('searchNasabah').value;
+            const stats = calculateStats();
+            renderNasabahList(stats.customers, q);
+        };
+
+
+
+        function renderUI() {
+            const stats = calculateStats();
+            
+            document.getElementById('totalCash').innerText = formatRp(stats.cash);
+            document.getElementById('totalBank').innerText = formatRp(stats.bank);
+            document.getElementById('totalAll').innerText = formatRp(stats.cash + stats.bank);
+
+            // Render List Nasabah dengan mempertahankan pencariannya jika ada
+            const searchNasabahInput = document.getElementById('searchNasabah');
+            renderNasabahList(stats.customers, searchNasabahInput ? searchNasabahInput.value : '');
+
+            const searchRiwayatInput = document.getElementById('searchRiwayat');
+            const monthRiwayatInput = document.getElementById('monthRiwayat');
+            
+            renderGlobalHistory(
+                searchRiwayatInput ? searchRiwayatInput.value : '',
+                monthRiwayatInput ? monthRiwayatInput.value : ''
+            );
+
+            if (currentActiveCustomer) {
+                populateCustomerDetail(currentActiveCustomer);
+            }
+        }
+
+// ==========================================
+        // LOGIKA RIWAYAT KESELURUHAN (GLOBAL)
+        // ==========================================
+        function renderGlobalHistory(filterQuery = "", filterMonth = "") {
+            const globalHistoryEl = document.getElementById('globalHistoryList');
+            globalHistoryEl.innerHTML = '';
+            
+            const reversedTx = [...transactions].reverse();
+            const q = filterQuery.toLowerCase();
+
+            const filteredTx = reversedTx.filter(tx => {
+                // Cek pencarian Teks
+                let matchText = true;
+                if (q) {
+                    const matchName = tx.customer.toLowerCase().includes(q);
+                    const matchKeterangan = tx.keterangan.toLowerCase().includes(q);
+                    matchText = matchName || matchKeterangan;
+                }
+                
+                // Cek pencarian Bulan (format ISO tx.timestamp selalu diawali YYYY-MM)
+                let matchMonth = true;
+                if (filterMonth) {
+                    matchMonth = tx.timestamp.startsWith(filterMonth);
+                }
+
+                return matchText && matchMonth;
+            });
+
+            if (filteredTx.length === 0) {
+                globalHistoryEl.innerHTML = `
+                    <div class="text-center py-10 bg-white rounded-2xl border border-slate-100 border-dashed">
+                        <p class="text-slate-400 text-sm font-medium">Transaksi tidak ditemukan.</p>
+                    </div>`;
+            } else {
+                filteredTx.forEach(tx => {
+                    globalHistoryEl.innerHTML += getTransactionCardHTML(tx, true);
+                });
+            }
+        }
+
+        window.filterRiwayat = function() {
+            const q = document.getElementById('searchRiwayat').value;
+            const m = document.getElementById('monthRiwayat').value;
+            renderGlobalHistory(q, m);
+        };
+
+
+        // ==========================================
+        // LOGIKA RIWAYAT PER NASABAH (PERSONAL)
+        // ==========================================
+        function renderPersonalHistory(customerName, filterQuery = "", filterMonth = "") {
+            const personalHistoryEl = document.getElementById('personalHistoryList');
+            personalHistoryEl.innerHTML = '';
+            const q = filterQuery.toLowerCase();
+            
+            const personalTx = [...transactions]
+                .filter(tx => tx.customer.toUpperCase() === customerName.toUpperCase())
+                .reverse()
+                .filter(tx => {
+                    // Cek pencarian teks
+                    let matchText = true;
+                    if (q) {
+                        const matchKeterangan = tx.keterangan.toLowerCase().includes(q);
+                        const matchNominal = tx.amount.toString().includes(q);
+                        matchText = matchKeterangan || matchNominal;
+                    }
+                    // Cek pencarian Bulan
+                    let matchMonth = true;
+                    if (filterMonth) {
+                        matchMonth = tx.timestamp.startsWith(filterMonth);
+                    }
+                    return matchText && matchMonth;
+                });
+
+            if (personalTx.length === 0) {
+                personalHistoryEl.innerHTML = `
+                    <div class="text-center py-6 bg-white rounded-2xl border border-slate-100 border-dashed">
+                        <p class="text-slate-400 text-sm font-medium">Transaksi tidak ditemukan.</p>
+                    </div>`;
+            } else {
+                personalTx.forEach(tx => {
+                    personalHistoryEl.innerHTML += getTransactionCardHTML(tx, false); 
+                });
+            }
+        }
+
+        window.filterPersonalHistory = function() {
+            if (!currentActiveCustomer) return;
+            const q = document.getElementById('searchPersonalHistory').value;
+            const m = document.getElementById('monthPersonalHistory').value;
+            renderPersonalHistory(currentActiveCustomer, q, m);
+        };
+
+
+        // ==========================================
+        // PEMBARUAN FUNGSI POPULATE & UI
+        // ==========================================
+        function populateCustomerDetail(customerName) {
+            const stats = calculateStats();
+            const balance = stats.customers[customerName] || 0;
+            
+            document.getElementById('detailCustomerName').innerText = customerName;
+            document.getElementById('detailCustomerInitial').innerText = customerName.charAt(0).toUpperCase();
+            document.getElementById('btnDeactivateCustomer').setAttribute('onclick', `nonaktifkanNasabah('${customerName}')`);
+
+            const balEl = document.getElementById('detailCustomerBalance');
+            balEl.innerText = formatRp(balance);
+            balEl.className = `text-3xl font-bold ${balance < 0 ? 'text-red-600' : 'text-slate-800'}`;
+
+            // Tarik nilai dari input jika sebelumnya diisi
+            const searchInput = document.getElementById('searchPersonalHistory');
+            const monthInput = document.getElementById('monthPersonalHistory');
+            
+            renderPersonalHistory(
+                customerName, 
+                searchInput ? searchInput.value : '', 
+                monthInput ? monthInput.value : ''
+            );
+        }
+
+        window.openCustomerDetail = function(customerName) {
+            currentActiveCustomer = customerName;
+            
+            // Mengosongkan form text dan kalender bulan setiap nasabah baru dibuka
+            const searchInput = document.getElementById('searchPersonalHistory');
+            if(searchInput) searchInput.value = '';
+            const monthInput = document.getElementById('monthPersonalHistory');
+            if(monthInput) monthInput.value = '';
+            
+            populateCustomerDetail(customerName);
+            const detailView = document.getElementById('customerDetailView');
+            detailView.classList.remove('translate-x-full');
+            detailView.classList.add('translate-x-0');
+        };
+
+        window.closeCustomerDetail = function() {
+            currentActiveCustomer = null;
+            const detailView = document.getElementById('customerDetailView');
+            detailView.classList.remove('translate-x-0');
+            detailView.classList.add('translate-x-full');
+        };
+
+        document.getElementById('transactionForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            if (!userId) return window.showToast("Error", "Belum terhubung ke server", "error");
+
+            const customer = document.getElementById('customerName').value.trim();
+const type = document.querySelector('input[name="txType"]:checked').value;
+const method = document.querySelector('input[name="txMethod"]:checked').value;
+const keterangan = document.getElementById('txKeterangan').value.trim();
+// Menghapus semua karakter non-digit (seperti titik) sebelum diproses
+const amountRaw = document.getElementById('txAmount').value;
+const amount = parseInt(amountRaw.replace(/\D/g, ''), 10);
+
+            if (type === 'keluar') {
+                const stats = calculateStats();
+                const currentBalance = stats.customers[customer.toUpperCase()] || 0;
+                
+                if (currentBalance < amount) {
+                    window.showToast('Transaksi Ditolak', `Saldo ${customer.toUpperCase()} tidak mencukupi. (Sisa: ${formatRp(currentBalance)})`, 'error');
+                    return; 
+                }
+            }
+
+            const newTx = {
+    user_id: userId,
+    timestamp: new Date().toISOString(),
+    customer,
+    type,
+    method,
+    keterangan,
+    amount: amount // <-- sudah bersih dari titik
+};
+
+            this.reset();
+            window.updateKeteranganLabel();
+            
+            const upperCustomer = customer.toUpperCase();
+            // Cek apakah nasabah sudah ada di tabel customers
+            const existingCustomer = customersData.find(c => c.name === upperCustomer);
+
+            try {
+                // 1. PROSES TABEL NASABAH
+                if (!existingCustomer) {
+                    // Jika nasabah baru, tambahkan ke database customers
+                    await supabase.from('customers').insert([{ user_id: userId, name: upperCustomer, is_active: true }]);
+                } else if (!existingCustomer.is_active) {
+                    // Jika nasabah sudah ada tapi statusnya tidak aktif, aktifkan kembali
+                    await supabase.from('customers').update({ is_active: true }).eq('id', existingCustomer.id);
+                }
+
+                // 2. PROSES TABEL TRANSAKSI
+                const newTx = {
+                    user_id: userId,
+                    timestamp: new Date().toISOString(),
+                    customer: upperCustomer,
+                    type,
+                    method,
+                    keterangan,
+                    amount: amount
+                };
+                
+                const { error } = await supabase.from('transactions').insert([newTx]);
+                if (error) throw error;
+                
+                window.showToast('Tersimpan', `Catatan untuk ${customer} telah diproses.`, 'success');
+            } catch (error) {
+                console.error("Save error:", error);
+                window.showToast('Error', 'Gagal menyimpan data.', 'error');
+            }
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+
+        async function fetchInitialData() {
+            try {
+                // 1. Ambil data dari tabel customers
+                const { data: custData, error: custError } = await supabase
+                    .from('customers').select('*').eq('user_id', userId);
+                if (custError) throw custError;
+                customersData = custData || [];
+
+                // 2. Ambil data dari tabel transactions
+                const { data: txData, error: txError } = await supabase
+                    .from('transactions').select('*').eq('user_id', userId).order('timestamp', { ascending: true });
+                if (txError) throw txError;
+                transactions = txData || [];
+
+                renderUI();
+            } catch (error) {
+                console.error("Fetch Error:", error);
+            }
+        }
+       
+        window.nonaktifkanNasabah = async function(customerName) {
+            const yakin = confirm(`Sembunyikan nasabah "${customerName}"?\n\nNasabah tidak akan lagi muncul di daftar, tetapi uang kas utama tidak akan berubah.`);
+            if (!yakin) return;
+
+            // Cari ID nasabah di variabel customersData
+            const targetCust = customersData.find(c => c.name === customerName.toUpperCase());
+            if (!targetCust) return;
+
+            try {
+                window.showToast('Memproses', 'Menyembunyikan nasabah...', 'success');
+                
+                // Update is_active menjadi false di tabel customers
+                const { error } = await supabase
+                    .from('customers')
+                    .update({ is_active: false })
+                    .eq('id', targetCust.id);
+
+                if (error) throw error;
+                
+                window.showToast('Berhasil', 'Nasabah disembunyikan.', 'success');
+                closeCustomerDetail();
+                
+            } catch (error) {
+                console.error("Update Error:", error);
+                window.showToast('Error', 'Gagal menyembunyikan nasabah.', 'error');
+            }
+        };
+
+        function setupRealtimeListener() {
+            // Listener untuk tabel TRANSAKSI
+            supabase.channel('public:transactions')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, payload => {
+                    if (payload.eventType === 'INSERT') {
+                        if (payload.new.user_id === userId) transactions.push(payload.new);
+                    } else if (payload.eventType === 'DELETE') {
+                        transactions = transactions.filter(t => t.id !== payload.old.id);
+                    } else if (payload.eventType === 'UPDATE') {
+                        const index = transactions.findIndex(t => t.id === payload.new.id);
+                        if (index !== -1) transactions[index] = payload.new;
+                    }
+                    transactions.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                    renderUI();
+                }).subscribe();
+
+            // Listener untuk tabel CUSTOMERS (BARU)
+            supabase.channel('public:customers')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, payload => {
+                    if (payload.eventType === 'INSERT') {
+                        if (payload.new.user_id === userId) customersData.push(payload.new);
+                    } else if (payload.eventType === 'UPDATE') {
+                        const index = customersData.findIndex(c => c.id === payload.new.id);
+                        if (index !== -1) customersData[index] = payload.new;
+                    }
+                    renderUI();
+                }).subscribe();
+        }
+
+        async function initializeDatabase() {
+            try {
+                // Autentikasi Anonim di Supabase (Pastikan Anon Sign In diaktifkan di Supabase Auth Provider)
+                const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+                
+                if (!session) {
+                    const { data, error } = await supabase.auth.signInAnonymously();
+                    if (error) throw error;
+                    userId = data.user.id;
+                } else {
+                    userId = session.user.id;
+                }
+
+                await fetchInitialData();
+                setupRealtimeListener();
+
+                window.showToast("Database Siap", "Sinkronisasi Supabase Aktif", "success");
+
+            } catch (error) {
+                console.error("Init Error:", error);
+                window.showToast("Koneksi Error", "Gagal menghubungkan ke Supabase.", "error");
+            }
+        }
+
+        // Init UI Event & Format
+        updateDateHeader();
+        window.updateKeteranganLabel();
+        
+        document.addEventListener('gesturestart', function (e) {
+            e.preventDefault();
+        });
+
+        // Jalankan koneksi
+        initializeDatabase();
+
+        // Mendaftarkan Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('Service Worker Terdaftar', reg.scope))
+                    .catch(err => console.error('Pendaftaran SW Gagal', err));
+            });
+        }
+
+    </script>
+</body>
+</html>
