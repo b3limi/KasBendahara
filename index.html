@@ -89,6 +89,11 @@
             <p class="text-xs text-slate-500 font-medium" id="headerDate">Loading date...</p>
         </div>
         <div class="flex items-center gap-2">
+            <!-- Tombol Instal Aplikasi (Akan disembunyikan jika tidak didukung/sudah diinstal) -->
+            <button id="installAppBtn" class="hidden items-center justify-center bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors px-3 py-1.5 rounded-full text-xs font-bold shadow-sm" title="Instal ke HP">
+                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                Instal
+            </button>
             <!-- Tombol Restore Data -->
             <label for="restoreFileInput" class="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:text-green-500 hover:bg-green-50 transition-colors cursor-pointer" title="Pulihkan dari Excel">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
@@ -1258,6 +1263,49 @@ const amount = parseInt(amountRaw.replace(/\D/g, ''), 10);
             }
         }
 
+        // ==========================================
+        // LOGIKA INSTALASI APLIKASI (PWA)
+        // ==========================================
+        let deferredPrompt;
+        const installAppBtn = document.getElementById('installAppBtn');
+
+        // Menangkap event instalasi dari browser
+        window.addEventListener('beforeinstallprompt', (e) => {
+            // Cegah browser menampilkan prompt bawaan secara otomatis
+            e.preventDefault();
+            // Simpan event untuk dipicu nanti
+            deferredPrompt = e;
+            // Tampilkan tombol Instal kustom kita
+            installAppBtn.classList.remove('hidden');
+            installAppBtn.classList.add('flex');
+        });
+
+        // Eksekusi ketika tombol Instal diklik
+        installAppBtn.addEventListener('click', async () => {
+            if (deferredPrompt) {
+                // Tampilkan prompt instalasi sistem
+                deferredPrompt.prompt();
+                
+                // Tunggu respon pengguna (Diizinkan / Batal)
+                const { outcome } = await deferredPrompt.userChoice;
+                
+                // Sembunyikan tombol setelah prompt muncul
+                installAppBtn.classList.add('hidden');
+                installAppBtn.classList.remove('flex');
+                
+                // Kosongkan variabel
+                deferredPrompt = null;
+            }
+        });
+
+        // Deteksi jika aplikasi berhasil diinstal
+        window.addEventListener('appinstalled', () => {
+            installAppBtn.classList.add('hidden');
+            installAppBtn.classList.remove('flex');
+            deferredPrompt = null;
+            window.showToast("Berhasil", "Aplikasi berhasil diinstal di perangkat Anda.", "success");
+        });
+        
         // Init UI Event & Format
         updateDateHeader();
         window.updateKeteranganLabel();
